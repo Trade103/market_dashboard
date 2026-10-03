@@ -35,7 +35,7 @@ HEADERS = {
 
 
 # ---------------------------------------------------------
-# LIVE DATA SCRAPERS & FETCHERS
+# DATA FETCHERS & CACHING
 # ---------------------------------------------------------
 
 # Long-term sentiment scrapers cached for 1 hour (3600s)
@@ -100,7 +100,6 @@ def fetch_aaii_sentiment():
             tables = pd.read_html(res.text)
             if len(tables) > 0:
                 df = tables[0]
-                # Row 0: Current Week | Row 1: Prior Week
                 curr_bull, curr_neu, curr_bear = (
                     df.iloc[0, 1],
                     df.iloc[0, 2],
@@ -111,7 +110,6 @@ def fetch_aaii_sentiment():
                     df.iloc[1, 2],
                     df.iloc[1, 3],
                 )
-
                 return (
                     {
                         "bull": str(curr_bull),
@@ -126,8 +124,6 @@ def fetch_aaii_sentiment():
                 )
     except Exception:
         pass
-
-    # Fallback default values
     return (
         {"bull": "44.1%", "neu": "28.3%", "bear": "27.6%"},
         {"bull": "41.5%", "neu": "29.0%", "bear": "29.5%"},
@@ -171,17 +167,17 @@ def fetch_market_data():
                 (spot_close - sma_50_today) / sma_50_today
             ) * 100
 
-            # 1. Calculate 10D SMA & Slope
+            # 10D SMA & Slope
             sma_10_series = hist["Close"].rolling(window=10).mean()
             sma_10_today = sma_10_series.iloc[-1]
             sma_10_trending_up = sma_10_today > sma_10_series.iloc[-2]
 
-            # 2. Calculate 21D EMA & Slope
+            # 21D EMA & Slope
             ema_21_series = hist["Close"].ewm(span=21, adjust=False).mean()
             ema_21_today = ema_21_series.iloc[-1]
             ema_21_trending_up = ema_21_today > ema_21_series.iloc[-2]
 
-            # 3. Derive MMTS Trend Badge
+            # MMTS Trend Badge Logic
             if (
                 spot_close > sma_10_today
                 and sma_10_trending_up
@@ -196,7 +192,7 @@ def fetch_market_data():
                 mmts_badge = "YELLOW"
                 mmts_color = "orange"
 
-            # 4. Volume Baselines
+            # Volume Baselines
             sma_50_vol = hist["Volume"].iloc[-51:-1].mean()
             last_vol = hist["Volume"].iloc[-1]
             prior_vol = hist["Volume"].iloc[-2]
@@ -223,11 +219,6 @@ def fetch_market_data():
     return data
 
 
-def format_sma_50_diff(val):
-    color = "green" if val >= 0 else "red"
-    sign = "+" if val > 0 else ""
-    return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 50D SMA</span>'
-
 # Execute Data Fetchers
 data = fetch_market_data()
 cnn_score, cnn_rating = fetch_cnn_fear_and_greed()
@@ -239,6 +230,12 @@ def format_high_diff(val):
     color = "green" if val >= 0 else "red"
     sign = "+" if val > 0 else ""
     return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 52W High</span>'
+
+
+def format_sma_50_diff(val):
+    color = "green" if val >= 0 else "red"
+    sign = "+" if val > 0 else ""
+    return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 50D SMA</span>'
 
 
 # ---------------------------------------------------------
@@ -254,6 +251,9 @@ with col1:
         st.metric("Spot Close", f"{n['spot']:,.2f}", f"{n['change']:+.2f}%")
         st.markdown(format_high_diff(n["high_diff"]), unsafe_allow_html=True)
         st.markdown(
+            format_sma_50_diff(n["sma_50_diff"]), unsafe_allow_html=True
+        )
+        st.markdown(
             f"**MMTS Trend:** <span style='color:{n['mmts_color']}; font-weight:bold;'>[{n['mmts_badge']}]</span>",
             unsafe_allow_html=True,
         )
@@ -266,6 +266,9 @@ with col2:
         s = data["S&P 500"]
         st.metric("Spot Close", f"{s['spot']:,.2f}", f"{s['change']:+.2f}%")
         st.markdown(format_high_diff(s["high_diff"]), unsafe_allow_html=True)
+        st.markdown(
+            format_sma_50_diff(s["sma_50_diff"]), unsafe_allow_html=True
+        )
 
 with col3:
     st.subheader("Russell 2000 (.RUT)")

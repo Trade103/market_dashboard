@@ -2,10 +2,24 @@ import datetime
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import yfinance as yf
 
 # Configure page layout
 st.set_page_config(page_title="Pro Market Health Dashboard", layout="wide")
+
+# ---------------------------------------------------------
+# AUTO-REFRESH CONFIGURATION
+# ---------------------------------------------------------
+# Trigger page update every 60,000 milliseconds (60 seconds)
+count = st_autorefresh(
+    interval=60 * 1000, key="market_dashboard_autorefresh"
+)
+
+# Display last refresh timestamp in the sidebar
+st.sidebar.caption(
+    f"Last Refreshed: {datetime.datetime.now().strftime('%I:%M:%S %p EST')}"
+)
 
 st.title("Pro Market Health & Quantitative Analytics Dashboard")
 st.markdown("---")
@@ -23,6 +37,8 @@ HEADERS = {
 # ---------------------------------------------------------
 # LIVE DATA SCRAPERS & FETCHERS
 # ---------------------------------------------------------
+
+# Long-term sentiment scrapers cached for 1 hour (3600s)
 @st.cache_data(ttl=3600)
 def fetch_cnn_fear_and_greed():
     try:
@@ -118,7 +134,8 @@ def fetch_aaii_sentiment():
     )
 
 
-@st.cache_data(ttl=3600)
+# Fast intraday market data cached for 60 seconds
+@st.cache_data(ttl=60)
 def fetch_market_data():
     tickers = {
         "Nasdaq": "^IXIC",

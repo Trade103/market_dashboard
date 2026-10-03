@@ -164,17 +164,24 @@ def fetch_market_data():
             high_52w = hist["Close"].max()
             high_diff_pct = ((spot_close - high_52w) / high_52w) * 100
 
+            # 50-Day SMA Calculation & Extension %
+            sma_50_series = hist["Close"].rolling(window=50).mean()
+            sma_50_today = sma_50_series.iloc[-1]
+            sma_50_diff_pct = (
+                (spot_close - sma_50_today) / sma_50_today
+            ) * 100
+
             # 1. Calculate 10D SMA & Slope
             sma_10_series = hist["Close"].rolling(window=10).mean()
             sma_10_today = sma_10_series.iloc[-1]
             sma_10_trending_up = sma_10_today > sma_10_series.iloc[-2]
 
-            # 2. Calculate 21D EMA & Slope (Today vs Yesterday)
+            # 2. Calculate 21D EMA & Slope
             ema_21_series = hist["Close"].ewm(span=21, adjust=False).mean()
             ema_21_today = ema_21_series.iloc[-1]
             ema_21_trending_up = ema_21_today > ema_21_series.iloc[-2]
 
-            # 3. Derive MMTS Trend Badge (Green / Yellow / Red)
+            # 3. Derive MMTS Trend Badge
             if (
                 spot_close > sma_10_today
                 and sma_10_trending_up
@@ -205,6 +212,7 @@ def fetch_market_data():
                 "spot": spot_close,
                 "change": pct_change,
                 "high_diff": high_diff_pct,
+                "sma_50_diff": sma_50_diff_pct,
                 "sma_10_up": sma_10_trending_up,
                 "ema_21_up": ema_21_trending_up,
                 "mmts_badge": mmts_badge,
@@ -214,6 +222,11 @@ def fetch_market_data():
             }
     return data
 
+
+def format_sma_50_diff(val):
+    color = "green" if val >= 0 else "red"
+    sign = "+" if val > 0 else ""
+    return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 50D SMA</span>'
 
 # Execute Data Fetchers
 data = fetch_market_data()

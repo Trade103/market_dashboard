@@ -25,14 +25,10 @@ is_market_hours = is_weekday and market_open and market_close
 
 # Run auto-refresh every 60 seconds ONLY during market hours
 if is_market_hours:
-    count = st_autorefresh(
-        interval=60 * 1000, key="market_dashboard_autorefresh"
-    )
+    count = st_autorefresh(interval=60 * 1000, key="market_dashboard_autorefresh")
     refresh_status = f"Auto-Refresh Active (60s) • Last Refreshed: {current_time_str}"
 else:
-    refresh_status = (
-        f"Market Closed • Post-Close Static View • As of {current_time_str}"
-    )
+    refresh_status = f"Market Closed • Post-Close Static View • As of {current_time_str}"
 
 # Dashboard Title & Live Header
 st.title("Market Trend Dashboard")
@@ -41,19 +37,13 @@ st.caption(refresh_status)
 st.markdown("---")
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
-
 
 # ---------------------------------------------------------
 # DATA FETCHERS & CACHING
 # ---------------------------------------------------------
 
-# Updated to 60-second cache TTL for real-time tracking
 @st.cache_data(ttl=60)
 def fetch_cnn_fear_and_greed():
     try:
@@ -68,8 +58,6 @@ def fetch_cnn_fear_and_greed():
         pass
     return "N/A", "Unavailable"
 
-
-# Updated to 60-second cache TTL for real-time tracking
 @st.cache_data(ttl=60)
 def fetch_cboe_put_call():
     try:
@@ -78,36 +66,15 @@ def fetch_cboe_put_call():
         if res.status_code == 200:
             tables = pd.read_html(res.text)
             for df in tables:
-                if (
-                    "Ratio" in df.columns
-                    or "Total" in df.to_string()
-                    or "P/C Ratio" in df.to_string()
-                ):
-                    total_pc = df[
-                        df.iloc[:, 0].str.contains(
-                            "Total", case=False, na=False
-                        )
-                    ].iloc[0, -1]
-                    equity_pc = df[
-                        df.iloc[:, 0].str.contains(
-                            "Equity", case=False, na=False
-                        )
-                    ].iloc[0, -1]
-                    index_pc = df[
-                        df.iloc[:, 0].str.contains(
-                            "Index", case=False, na=False
-                        )
-                    ].iloc[0, -1]
-                    return (
-                        f"{float(total_pc):.2f}",
-                        f"Equity: {float(equity_pc):.2f} | Index: {float(index_pc):.2f}",
-                    )
+                if "Ratio" in df.columns or "Total" in df.to_string() or "P/C Ratio" in df.to_string():
+                    total_pc = df[df.iloc[:, 0].str.contains("Total", case=False, na=False)].iloc[0, -1]
+                    equity_pc = df[df.iloc[:, 0].str.contains("Equity", case=False, na=False)].iloc[0, -1]
+                    index_pc = df[df.iloc[:, 0].str.contains("Index", case=False, na=False)].iloc[0, -1]
+                    return f"{float(total_pc):.2f}", f"Equity: {float(equity_pc):.2f} | Index: {float(index_pc):.2f}"
     except Exception:
         pass
     return "0.82", "Equity: 0.61 | Index: 1.05"
 
-
-# Weekly survey retains 1-hour cache
 @st.cache_data(ttl=3600)
 def fetch_aaii_sentiment():
     try:
@@ -117,37 +84,19 @@ def fetch_aaii_sentiment():
             tables = pd.read_html(res.text)
             if len(tables) > 0:
                 df = tables[0]
-                curr_bull, curr_neu, curr_bear = (
-                    df.iloc[0, 1],
-                    df.iloc[0, 2],
-                    df.iloc[0, 3],
-                )
-                prev_bull, prev_neu, prev_bear = (
-                    df.iloc[1, 1],
-                    df.iloc[1, 2],
-                    df.iloc[1, 3],
-                )
+                curr_bull, curr_neu, curr_bear = df.iloc[0, 1], df.iloc[0, 2], df.iloc[0, 3]
+                prev_bull, prev_neu, prev_bear = df.iloc[1, 1], df.iloc[1, 2], df.iloc[1, 3]
                 return (
-                    {
-                        "bull": str(curr_bull),
-                        "neu": str(curr_neu),
-                        "bear": str(curr_bear),
-                    },
-                    {
-                        "bull": str(prev_bull),
-                        "neu": str(prev_neu),
-                        "bear": str(prev_bear),
-                    },
+                    {"bull": str(curr_bull), "neu": str(curr_neu), "bear": str(curr_bear)},
+                    {"bull": str(prev_bull), "neu": str(prev_neu), "bear": str(prev_bear)}
                 )
     except Exception:
         pass
     return (
         {"bull": "44.1%", "neu": "28.3%", "bear": "27.6%"},
-        {"bull": "41.5%", "neu": "29.0%", "bear": "29.5%"},
+        {"bull": "41.5%", "neu": "29.0%", "bear": "29.5%"}
     )
 
-
-# Fast intraday market data cached for 60 seconds
 @st.cache_data(ttl=60)
 def fetch_market_data():
     tickers = {
@@ -155,51 +104,39 @@ def fetch_market_data():
         "S&P 500": "^GSPC",
         "Russell 2000": "^RUT",
         "VIX": "^VIX",
-        "TNX": "^TNX",
+        "TNX": "^TNX"
     }
     data = {}
-
+    
     for name, symbol in tickers.items():
         t = yf.Ticker(symbol)
         hist = t.history(period="1y")
-
+        
         if not hist.empty:
             spot_close = hist["Close"].iloc[-1]
             prior_close = hist["Close"].iloc[-2]
             pct_change = ((spot_close - prior_close) / prior_close) * 100
-
-            # Real-time Macro Gauges (VIX & TNX)
+            
             if name in ["VIX", "TNX"]:
                 data[name] = {"spot": spot_close, "change": pct_change}
                 continue
 
-            # 52-Week High Calculation
             high_52w = hist["Close"].max()
             high_diff_pct = ((spot_close - high_52w) / high_52w) * 100
-
-            # 50-Day SMA Calculation & Extension %
+            
             sma_50_series = hist["Close"].rolling(window=50).mean()
             sma_50_today = sma_50_series.iloc[-1]
-            sma_50_diff_pct = (
-                (spot_close - sma_50_today) / sma_50_today
-            ) * 100
-
-            # 10D SMA & Slope
+            sma_50_diff_pct = ((spot_close - sma_50_today) / sma_50_today) * 100
+            
             sma_10_series = hist["Close"].rolling(window=10).mean()
             sma_10_today = sma_10_series.iloc[-1]
             sma_10_trending_up = sma_10_today > sma_10_series.iloc[-2]
-
-            # 21D EMA & Slope
+            
             ema_21_series = hist["Close"].ewm(span=21, adjust=False).mean()
             ema_21_today = ema_21_series.iloc[-1]
             ema_21_trending_up = ema_21_today > ema_21_series.iloc[-2]
-
-            # MMTS Trend Badge Logic
-            if (
-                spot_close > sma_10_today
-                and sma_10_trending_up
-                and ema_21_trending_up
-            ):
+            
+            if spot_close > sma_10_today and sma_10_trending_up and ema_21_trending_up:
                 mmts_badge = "GREEN"
                 mmts_color = "green"
             elif spot_close < sma_10_today and not ema_21_trending_up:
@@ -208,19 +145,14 @@ def fetch_market_data():
             else:
                 mmts_badge = "YELLOW"
                 mmts_color = "orange"
-
-            # Integrated Volume Pacing
+                
             sma_50_vol = hist["Volume"].iloc[-51:-1].mean()
             last_vol = hist["Volume"].iloc[-1]
             prior_vol = hist["Volume"].iloc[-2]
-
-            pacing_50d = (
-                (last_vol / sma_50_vol) * 100 if sma_50_vol > 0 else 0
-            )
-            pacing_prior = (
-                (last_vol / prior_vol) * 100 if prior_vol > 0 else 0
-            )
-
+            
+            pacing_50d = (last_vol / sma_50_vol) * 100 if sma_50_vol > 0 else 0
+            pacing_prior = (last_vol / prior_vol) * 100 if prior_vol > 0 else 0
+            
             data[name] = {
                 "spot": spot_close,
                 "change": pct_change,
@@ -231,29 +163,24 @@ def fetch_market_data():
                 "mmts_badge": mmts_badge,
                 "mmts_color": mmts_color,
                 "pacing_50d": pacing_50d,
-                "pacing_prior": pacing_prior,
+                "pacing_prior": pacing_prior
             }
     return data
 
-
-# Execute Data Fetchers
 data = fetch_market_data()
 cnn_score, cnn_rating = fetch_cnn_fear_and_greed()
 cboe_total, cboe_breakdown = fetch_cboe_put_call()
 aaii_curr, aaii_prev = fetch_aaii_sentiment()
-
 
 def format_high_diff(val):
     color = "green" if val >= 0 else "red"
     sign = "+" if val > 0 else ""
     return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 52W High</span>'
 
-
 def format_sma_50_diff(val):
     color = "green" if val >= 0 else "red"
     sign = "+" if val > 0 else ""
     return f'<span style="color:{color}; font-weight:bold;">{sign}{val:.2f}% vs 50D SMA</span>'
-
 
 # ---------------------------------------------------------
 # REAL-TIME MARKET HEALTH & INDEXES
@@ -266,14 +193,9 @@ with col1:
     if "Nasdaq" in data:
         n = data["Nasdaq"]
         st.metric("Spot Close", f"{n['spot']:,.2f}", f"{n['change']:+.2f}%")
-        st.markdown(format_high_diff(n["high_diff"]), unsafe_allow_html=True)
-        st.markdown(
-            format_sma_50_diff(n["sma_50_diff"]), unsafe_allow_html=True
-        )
-        st.markdown(
-            f"**MMTS Trend:** <span style='color:{n['mmts_color']}; font-weight:bold;'>[{n['mmts_badge']}]</span>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(format_high_diff(n['high_diff']), unsafe_allow_html=True)
+        st.markdown(format_sma_50_diff(n['sma_50_diff']), unsafe_allow_html=True)
+        st.markdown(f"**MMTS Trend:** <span style='color:{n['mmts_color']}; font-weight:bold;'>[{n['mmts_badge']}]</span>", unsafe_allow_html=True)
         st.caption(f"10D SMA: {'UP' if n['sma_10_up'] else 'DOWN'}")
         st.caption(f"21D EMA: {'UP' if n['ema_21_up'] else 'DOWN'}")
         st.markdown("---")
@@ -286,10 +208,8 @@ with col2:
     if "S&P 500" in data:
         s = data["S&P 500"]
         st.metric("Spot Close", f"{s['spot']:,.2f}", f"{s['change']:+.2f}%")
-        st.markdown(format_high_diff(s["high_diff"]), unsafe_allow_html=True)
-        st.markdown(
-            format_sma_50_diff(s["sma_50_diff"]), unsafe_allow_html=True
-        )
+        st.markdown(format_high_diff(s['high_diff']), unsafe_allow_html=True)
+        st.markdown(format_sma_50_diff(s['sma_50_diff']), unsafe_allow_html=True)
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("**Volume Participation**")
@@ -301,7 +221,7 @@ with col3:
     if "Russell 2000" in data:
         r = data["Russell 2000"]
         st.metric("Spot Close", f"{r['spot']:,.2f}", f"{r['change']:+.2f}%")
-        st.markdown(format_high_diff(r["high_diff"]), unsafe_allow_html=True)
+        st.markdown(format_high_diff(r['high_diff']), unsafe_allow_html=True)
 
 st.markdown("---")
 st.subheader("Macro, Sentiment & Volatility Gauges")
@@ -338,60 +258,19 @@ with bcol1:
 
 with bcol2:
     st.subheader("AAII Sentiment Survey")
-    st.write(
-        f"• **Bullish:** {aaii_curr['bull']} *(Prior Wk: {aaii_prev['bull']} | Hist Avg: 37.5%)*"
-    )
-    st.write(
-        f"• **Neutral:** {aaii_curr['neu']} *(Prior Wk: {aaii_prev['neu']} | Hist Avg: 31.5%)*"
-    )
-    st.write(
-        f"• **Bearish:** {aaii_curr['bear']} *(Prior Wk: {aaii_prev['bear']} | Hist Avg: 31.0%)*"
-    )
+    st.write(f"• **Bullish:** {aaii_curr['bull']} *(Prior Wk: {aaii_prev['bull']} | Hist Avg: 37.5%)*")
+    st.write(f"• **Neutral:** {aaii_curr['neu']} *(Prior Wk: {aaii_prev['neu']} | Hist Avg: 31.5%)*")
+    st.write(f"• **Bearish:** {aaii_curr['bear']} *(Prior Wk: {aaii_prev['bear']} | Hist Avg: 31.0%)*")
 
 st.markdown("---")
 st.subheader("Rolling Macro & Economic Calendar")
 
 calendar_data = [
-    {
-        "Event": "U.S. Employment Situation (NFP)",
-        "Release Date": "Oct 02, 2026",
-        "Forecast": "170K",
-        "Prior": "142K",
-        "Status": "Released",
-        "Report Link": "https://www.bls.gov/news.release/empsit.nr0.htm",
-    },
-    {
-        "Event": "Consumer Price Index (CPI)",
-        "Release Date": "Oct 14, 2026",
-        "Forecast": "2.5%",
-        "Prior": "2.5%",
-        "Status": "Upcoming",
-        "Report Link": "https://www.bls.gov/cpi/",
-    },
-    {
-        "Event": "Producer Price Index (PPI)",
-        "Release Date": "Oct 15, 2026",
-        "Forecast": "0.2%",
-        "Prior": "0.2%",
-        "Status": "Upcoming",
-        "Report Link": "https://www.bls.gov/ppi/",
-    },
-    {
-        "Event": "FOMC Interest Rate Decision",
-        "Release Date": "Oct 28, 2026",
-        "Forecast": "4.75%",
-        "Prior": "5.00%",
-        "Status": "Upcoming",
-        "Report Link": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
-    },
-    {
-        "Event": "PCE Price Index (Fed Preferred)",
-        "Release Date": "Oct 29, 2026",
-        "Forecast": "2.6%",
-        "Prior": "2.6%",
-        "Status": "Upcoming",
-        "Report Link": "https://www.bea.gov/data/income-saving/personal-income",
-    },
+    {"Event": "U.S. Employment Situation (NFP)", "Release Date": "Oct 02, 2026", "Forecast": "170K", "Prior": "142K", "Status": "Released", "Report Link": "https://www.bls.gov/news.release/empsit.nr0.htm"},
+    {"Event": "Consumer Price Index (CPI)", "Release Date": "Oct 14, 2026", "Forecast": "2.5%", "Prior": "2.5%", "Status": "Upcoming", "Report Link": "https://www.bls.gov/cpi/"},
+    {"Event": "Producer Price Index (PPI)", "Release Date": "Oct 15, 2026", "Forecast": "0.2%", "Prior": "0.2%", "Status": "Upcoming", "Report Link": "https://www.bls.gov/ppi/"},
+    {"Event": "FOMC Interest Rate Decision", "Release Date": "Oct 28, 2026", "Forecast": "4.75%", "Prior": "5.00%", "Status": "Upcoming", "Report Link": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"},
+    {"Event": "PCE Price Index (Fed Preferred)", "Release Date": "Oct 29, 2026", "Forecast": "2.6%", "Prior": "2.6%", "Status": "Upcoming", "Report Link": "https://www.bea.gov/data/income-saving/personal-income"}
 ]
 
 st.dataframe(pd.DataFrame(calendar_data), use_container_width=True)

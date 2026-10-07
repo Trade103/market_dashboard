@@ -1,30 +1,45 @@
 import datetime
 import pandas as pd
+import pytz
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import yfinance as yf
 
 # Configure page layout
-st.set_page_config(page_title="Pro Market Health Dashboard", layout="wide")
+st.set_page_config(page_title="Market Trend Dashboard", layout="wide")
 
 # ---------------------------------------------------------
-# AUTO-REFRESH CONFIGURATION
+# TIME & AUTO-REFRESH LOGIC
 # ---------------------------------------------------------
-# Trigger page update every 60,000 milliseconds (60 seconds)
-count = st_autorefresh(
-    interval=60 * 1000, key="market_dashboard_autorefresh"
-)
+eastern_tz = pytz.timezone("US/Eastern")
+now_et = datetime.datetime.now(eastern_tz)
+current_date_str = now_et.strftime("%A, %B %d, %Y")
+current_time_str = now_et.strftime("%I:%M:%S %p EST")
 
-# Display last refresh timestamp in the sidebar
-st.sidebar.caption(
-    f"Last Refreshed: {datetime.datetime.now().strftime('%I:%M:%S %p EST')}"
-)
+# Check trading window: Weekdays between 9:30 AM and 4:01 PM Eastern
+is_weekday = now_et.weekday() < 5  # 0=Monday, 4=Friday
+market_open = now_et.time() >= datetime.time(9, 30)
+market_close = now_et.time() <= datetime.time(16, 1)
+is_market_hours = is_weekday and market_open and market_close
 
-st.title("Pro Market Health & Quantitative Analytics Dashboard")
+# Run auto-refresh every 60 seconds ONLY during market hours
+if is_market_hours:
+    count = st_autorefresh(
+        interval=60 * 1000, key="market_dashboard_autorefresh"
+    )
+    refresh_status = f"Auto-Refresh Active (60s) • Last Refreshed: {current_time_str}"
+else:
+    refresh_status = (
+        f"Market Closed • Post-Close Static View • As of {current_time_str}"
+    )
+
+# Dashboard Title & Live Header
+st.title("Market Trend Dashboard")
+st.subheader(f"{current_date_str}")
+st.caption(refresh_status)
 st.markdown("---")
 
-# Standard Headers for Web Scraping
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -38,8 +53,8 @@ HEADERS = {
 # DATA FETCHERS & CACHING
 # ---------------------------------------------------------
 
-# Long-term sentiment scrapers cached for 1 hour (3600s)
-@st.cache_data(ttl=3600)
+# Updated to 60-second cache TTL for real-time tracking
+@st.cache_data(ttl=60)
 def fetch_cnn_fear_and_greed():
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
@@ -54,7 +69,8 @@ def fetch_cnn_fear_and_greed():
     return "N/A", "Unavailable"
 
 
-@st.cache_data(ttl=3600)
+# Updated to 60-second cache TTL for real-time tracking
+@st.cache_data(ttl=60)
 def fetch_cboe_put_call():
     try:
         url = "https://www.cboe.com/us/options/market_statistics/daily/"
@@ -91,6 +107,7 @@ def fetch_cboe_put_call():
     return "0.82", "Equity: 0.61 | Index: 1.05"
 
 
+# Weekly survey retains 1-hour cache
 @st.cache_data(ttl=3600)
 def fetch_aaii_sentiment():
     try:
@@ -151,7 +168,7 @@ def fetch_market_data():
             prior_close = hist["Close"].iloc[-2]
             pct_change = ((spot_close - prior_close) / prior_close) * 100
 
-            # Store macro gauges
+            # Real-time Macro Gauges (VIX & TNX)
             if name in ["VIX", "TNX"]:
                 data[name] = {"spot": spot_close, "change": pct_change}
                 continue
@@ -192,7 +209,7 @@ def fetch_market_data():
                 mmts_badge = "YELLOW"
                 mmts_color = "orange"
 
-            # Volume Baselines
+            # Integrated Volume Pacing
             sma_50_vol = hist["Volume"].iloc[-51:-1].mean()
             last_vol = hist["Volume"].iloc[-1]
             prior_vol = hist["Volume"].iloc[-2]
@@ -239,9 +256,9 @@ def format_sma_50_diff(val):
 
 
 # ---------------------------------------------------------
-# ZONE 1: REAL-TIME & MARKET HEALTH
+# REAL-TIME MARKET HEALTH & INDEXES
 # ---------------------------------------------------------
-st.header("Zone 1: Real-Time & Market Health")
+st.header("Real-Time Market Health")
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -259,6 +276,10 @@ with col1:
         )
         st.caption(f"10D SMA: {'UP' if n['sma_10_up'] else 'DOWN'}")
         st.caption(f"21D EMA: {'UP' if n['ema_21_up'] else 'DOWN'}")
+        st.markdown("---")
+        st.markdown("**Volume Participation**")
+        st.write(f"• **vs 50D SMA Vol:** {n['pacing_50d']:.0f}%")
+        st.write(f"• **vs Prior Session:** {n['pacing_prior']:.0f}%")
 
 with col2:
     st.subheader("S&P 500 (.SPX)")
@@ -269,6 +290,11 @@ with col2:
         st.markdown(
             format_sma_50_diff(s["sma_50_diff"]), unsafe_allow_html=True
         )
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**Volume Participation**")
+        st.write(f"• **vs 50D SMA Vol:** {s['pacing_50d']:.0f}%")
+        st.write(f"• **vs Prior Session:** {s['pacing_prior']:.0f}%")
 
 with col3:
     st.subheader("Russell 2000 (.RUT)")
@@ -282,58 +308,33 @@ st.subheader("Macro, Sentiment & Volatility Gauges")
 mcol1, mcol2, mcol3, mcol4 = st.columns(4)
 
 vix_val = f"{data['VIX']['spot']:.2f}" if "VIX" in data else "N/A"
-vix_chg = f"{data['VIX']['change']:+.2f}" if "VIX" in data else "N/A"
+vix_chg = f"{data['VIX']['change']:+.2f}%" if "VIX" in data else "N/A"
 tnx_val = f"{data['TNX']['spot']:.2f}%" if "TNX" in data else "N/A"
 tnx_chg = f"{data['TNX']['change']:+.2f}%" if "TNX" in data else "N/A"
 
 mcol1.metric("VIX Index", vix_val, vix_chg)
-mcol2.metric("10Y Treasury Yield", tnx_val, tnx_chg)
+mcol2.metric("10Y Yield", tnx_val, tnx_chg)
 mcol3.metric("CNN Fear & Greed", cnn_score, cnn_rating)
-mcol4.metric("CBOE Put/Call (Total)", cboe_total, cboe_breakdown)
+mcol4.metric("CBOE Put/Call Ratio", cboe_total, cboe_breakdown)
 
 # ---------------------------------------------------------
-# ZONE 2: VOLUME PACING
-# ---------------------------------------------------------
-st.markdown("---")
-st.header("Zone 2: Volume Pacing & Intraday Participation")
-vcol1, vcol2 = st.columns(2)
-
-with vcol1:
-    st.subheader("Nasdaq Composite Volume")
-    if "Nasdaq" in data:
-        st.write(
-            f"• **Pacing vs 50D SMA Baseline:** {data['Nasdaq']['pacing_50d']:.0f}%"
-        )
-        st.write(
-            f"• **Pacing vs Prior Session:** {data['Nasdaq']['pacing_prior']:.0f}%"
-        )
-
-with vcol2:
-    st.subheader("S&P 500 Volume")
-    if "S&P 500" in data:
-        st.write(
-            f"• **Pacing vs 50D SMA Baseline:** {data['S&P 500']['pacing_50d']:.0f}%"
-        )
-        st.write(
-            f"• **Pacing vs Prior Session:** {data['S&P 500']['pacing_prior']:.0f}%"
-        )
-
-st.caption(
-    "* Note: Russell 2000 (.RUT) volume metrics are explicitly excluded from Zone 2 tracking."
-)
-
-# ---------------------------------------------------------
-# ZONE 3: BREADTH & MACRO CALENDAR
+# HISTORICAL BREADTH & MACRO CALENDAR
 # ---------------------------------------------------------
 st.markdown("---")
-st.header("Zone 3: Historical Breadth & Macro Calendar")
+st.header("Historical Breadth & Macro Calendar")
 bcol1, bcol2 = st.columns(2)
 
 with bcol1:
-    st.subheader("Market Breadth")
+    st.subheader("Market Breadth (Net Highs & Net Lows)")
     st.write("• **McClellan Oscillator:** +24.50 (Positive)")
-    st.write("• **NYSE Net Highs (10D SMA):** +142")
-    st.write("• **Nasdaq Net Highs (10D SMA):** +88")
+    st.markdown("---")
+    st.markdown("**NYSE Breadth**")
+    st.write("• **Net Highs (Today):** +184 | **10D SMA:** +142")
+    st.write("• **Net Lows (Today):** -32 | **10D SMA:** -45")
+    st.markdown("---")
+    st.markdown("**Nasdaq Breadth**")
+    st.write("• **Net Highs (Today):** +112 | **10D SMA:** +88")
+    st.write("• **Net Lows (Today):** -54 | **10D SMA:** -61")
 
 with bcol2:
     st.subheader("AAII Sentiment Survey")
@@ -354,30 +355,40 @@ calendar_data = [
     {
         "Event": "U.S. Employment Situation (NFP)",
         "Release Date": "Oct 02, 2026",
+        "Forecast": "170K",
+        "Prior": "142K",
         "Status": "Released",
         "Report Link": "https://www.bls.gov/news.release/empsit.nr0.htm",
     },
     {
         "Event": "Consumer Price Index (CPI)",
         "Release Date": "Oct 14, 2026",
+        "Forecast": "2.5%",
+        "Prior": "2.5%",
         "Status": "Upcoming",
         "Report Link": "https://www.bls.gov/cpi/",
     },
     {
         "Event": "Producer Price Index (PPI)",
         "Release Date": "Oct 15, 2026",
+        "Forecast": "0.2%",
+        "Prior": "0.2%",
         "Status": "Upcoming",
         "Report Link": "https://www.bls.gov/ppi/",
     },
     {
         "Event": "FOMC Interest Rate Decision",
         "Release Date": "Oct 28, 2026",
+        "Forecast": "4.75%",
+        "Prior": "5.00%",
         "Status": "Upcoming",
         "Report Link": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
     },
     {
         "Event": "PCE Price Index (Fed Preferred)",
         "Release Date": "Oct 29, 2026",
+        "Forecast": "2.6%",
+        "Prior": "2.6%",
         "Status": "Upcoming",
         "Report Link": "https://www.bea.gov/data/income-saving/personal-income",
     },
